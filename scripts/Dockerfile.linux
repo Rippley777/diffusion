@@ -1,0 +1,9 @@
+FROM rust:1.95-slim-bookworm
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    pkg-config libwayland-dev libxkbcommon-dev libx11-dev libx11-xcb-dev \
+    libxcursor-dev libxi-dev libxrandr-dev libegl1-mesa-dev libvulkan1 \
+    mesa-vulkan-drivers xvfb xauth weston dbus-x11 xdotool ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y --no-install-recommends libxkbcommon-x11-0 && rm -rf /var/lib/apt/lists/*
+WORKDIR /work
+ENV CARGO_TARGET_DIR=/build

@@ -1,0 +1,10 @@
+[package]
+name = "diffusion-core"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+similar = "3.2"
+syntect = { version = "5.3", default-features = false, features = ["default-fancy"] }
