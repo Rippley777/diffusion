@@ -8,7 +8,7 @@
 |---|---|
 | macOS Apple Silicon, Rust 1.95.0 | Workspace compiles; optimized native binary builds |
 | Formatting / lint | `cargo fmt --all --check`; Clippy across workspace, targets, and features with warnings denied |
-| Rust tests on macOS | 12 passing: 8 core tests and 4 UI event/workflow tests |
+| Rust tests on macOS | 13 passing: 8 core tests and 5 UI event/workflow tests |
 | Rust tests on Linux ARM64, Debian 12 container | Same workspace tests; no frontend fork |
 | macOS Metal render | Real native window opened, comparison loaded asynchronously, light/dark GPU screenshots captured, window closed through the viewport command |
 | macOS welcome | Native rendered screenshot inspected; no mockup image |
@@ -16,7 +16,7 @@
 | Linux native X11 drop and navigation | Xdnd source sends original file, then changed file; xdotool sends Control-G. Screenshot shows the second of four hunks selected and scrolled into view |
 | Linux native Wayland render | Headless Weston + Mesa software Vulkan, same comparison, capture and orderly close |
 
-The native X11 smoke test uses `scripts/x11-drop.c` as a real Xdnd source. It is test tooling, not an application dependency. Rust UI tests additionally inject paired drops and cover completing the pair when a second file lands on the already occupied welcome target, stale request rejection, error preservation, theme changes, navigation, and close commands.
+The native X11 smoke test uses `scripts/x11-drop.c` as a real Xdnd source. It is test tooling, not an application dependency. Rust UI tests additionally inject paired drops and paste events. They cover filling A and B from consecutive pastes, starting a fresh pair with a third paste, completing a dropped pair when the second file lands on the already occupied welcome target, stale request rejection, error preservation, theme changes, navigation, and close commands.
 
 Core tests cover both document reconstruction for all three algorithms, empty/insert/delete/replace inputs, UTF-8 inline offsets, normalization without source mutation, missing final newline, expansion of folds, a 20,000-line comparison, binary/encoding/size rejection, and multiline syntax state.
 

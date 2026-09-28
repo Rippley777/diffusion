@@ -13,7 +13,7 @@ cargo run --release -p diffusion
 cargo run --release -p diffusion -- path/to/original.rs path/to/changed.rs
 ```
 
-Drop one file, then a second, or drop both together. You can also choose files through the native picker. **Explore an example** opens the bundled sample in the actual comparison engine. A single drop onto an existing comparison replaces the side under the pointer.
+Drop one file, then a second, or drop both together. You can also choose files through the native picker. Press Command-V on macOS or Control-V on Linux once to place clipboard text in A, then again with new clipboard text to place it in B and compare immediately. Pasting while a completed pair is open starts a new pair at A. Files and clipboard text can be mixed. **Explore an example** opens the bundled sample in the actual comparison engine. A single drop onto an existing comparison replaces the side under the pointer.
 
 - Previous / Next, or Command-G / Shift-Command-G on macOS; Control-G / Shift-Control-G on Linux.
 - Click an overview marker to jump to its change.
@@ -22,6 +22,8 @@ Drop one file, then a second, or drop both together. You can also choose files t
 - Preferences: System / Light / Dark, font size, Patience / Myers / Histogram, and ignore options.
 - Focus hides the main chrome; Escape restores it.
 - Command/Control-O opens files, Command/Control-comma opens preferences, Command/Control-W closes.
+- Command/Control-N clears the current inputs and starts a new comparison.
+- Command/Control-V accepts plain text from the system clipboard; empty and oversized clipboard contents show an error without replacing the current comparison.
 
 Compared files are never modified. Appearance preferences are stored by eframe in the local OS application-data directory. Comparison options currently last for the running session.
 

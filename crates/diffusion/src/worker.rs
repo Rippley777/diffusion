@@ -6,6 +6,23 @@ use std::{
     thread,
 };
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Input {
+    File(PathBuf),
+    Clipboard { name: String, text: String },
+}
+
+impl Input {
+    fn load(&self) -> Result<Document, String> {
+        match self {
+            Self::File(path) => Document::load(path),
+            Self::Clipboard { name, text } => {
+                Ok(Document::from_text(PathBuf::from(name), text.clone()))
+            }
+        }
+    }
+}
+
 pub struct Comparison {
     pub left: Document,
     pub right: Document,
@@ -16,7 +33,7 @@ pub struct Comparison {
 }
 pub struct Request {
     pub generation: u64,
-    pub paths: [PathBuf; 2],
+    pub inputs: [Input; 2],
     pub options: DiffOptions,
     pub demo: bool,
 }
@@ -58,7 +75,7 @@ impl Worker {
                             include_str!("../../../fixtures/before.rs").into(),
                         )
                     } else {
-                        Document::load(&request.paths[0])?
+                        request.inputs[0].load()?
                     };
                     let right = if request.demo {
                         Document::from_text(
@@ -66,7 +83,7 @@ impl Worker {
                             include_str!("../../../fixtures/after.rs").into(),
                         )
                     } else {
-                        Document::load(&request.paths[1])?
+                        request.inputs[1].load()?
                     };
                     let diff = DiffEngine::compare(&left, &right, &request.options);
                     if q.0.lock().unwrap().pending.is_some() {

@@ -64,6 +64,7 @@ impl NativeMenu {
                 "File",
                 true,
                 &[
+                    &MenuItem::with_id("new", "New Comparison", true, None),
                     &MenuItem::with_id("open", "Compare Files…", true, None),
                     &MenuItem::with_id("close", "Close Window", true, None),
                 ],

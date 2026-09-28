@@ -16,7 +16,7 @@ Both panes share vertical movement; horizontal movement preserves unwrapped code
 
 ## Interaction
 
-Drop two files to compare. Drop one to fill the left slot, then another to fill the right. Once comparing, a single drop replaces the side beneath the pointer. Clicking either file target opens a native picker. Errors leave the last successful comparison intact and explain what failed. Loading never replaces the window with a blank screen.
+Drop two files to compare. Drop one to fill the left slot, then another to fill the right. Paste once to fill A with clipboard text and paste again to fill B. Once a pasted comparison is complete, another paste starts a fresh pair at A. File and clipboard inputs may be mixed. Once comparing files, a single drop replaces the side beneath the pointer. Clicking either file target opens a native picker. Errors leave the last successful comparison intact and explain what failed. Loading never replaces the window with a blank screen.
 
 Command on macOS, Control on Linux: O opens files, G / Shift-G navigate, W closes, comma opens preferences. Escape closes preferences. Keyboard focus is visible. Theme offers System / Light / Dark. Differences remain identifiable without red-green discrimination.
 

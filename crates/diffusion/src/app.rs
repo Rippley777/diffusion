@@ -1,10 +1,10 @@
 use crate::{
     platform,
     theme::Palette,
-    worker::{Comparison, Request, Worker},
+    worker::{Comparison, Input, Request, Worker},
 };
 use diffusion_core::{
-    ChangeType, DiffOptions, DisplayRow, Document, InlineChange, Strategy, Syntax,
+    ChangeType, DiffOptions, DisplayRow, Document, InlineChange, MAX_FILE_BYTES, Strategy, Syntax,
 };
 use eframe::egui::{
     self, Align2, Color32, FontId, Pos2, Rect, RichText, Sense, Stroke, pos2, vec2,
@@ -31,7 +31,7 @@ impl Default for Preferences {
 }
 
 pub struct Diffusion {
-    paths: [Option<PathBuf>; 2],
+    inputs: [Option<Input>; 2],
     comparison: Option<Comparison>,
     worker: Worker,
     generation: u64,
@@ -60,7 +60,7 @@ impl Diffusion {
             .and_then(|s| eframe::get_value(s, "preferences"))
             .unwrap_or_default();
         let mut app = Self {
-            paths: [None, None],
+            inputs: [None, None],
             comparison: None,
             worker: Worker::new(cc.egui_ctx.clone()),
             generation: 0,
@@ -102,36 +102,71 @@ impl Diffusion {
             return;
         }
         if self.demo {
-            self.paths = [None, None];
+            self.inputs = [None, None];
             self.comparison = None;
             self.hunk_positions.clear();
         }
         self.demo = false;
         if paths.len() == 2 {
-            self.paths = [Some(paths[0].clone()), Some(paths[1].clone())];
+            self.inputs = [
+                Some(Input::File(paths[0].clone())),
+                Some(Input::File(paths[1].clone())),
+            ];
         } else {
-            let index = side.unwrap_or(if self.paths[0].is_none() { 0 } else { 1 });
-            self.paths[index] = Some(paths[0].clone());
+            let index = side.unwrap_or(if self.inputs[0].is_none() { 0 } else { 1 });
+            self.inputs[index] = Some(Input::File(paths[0].clone()));
         }
         self.request();
     }
+    fn accept_clipboard(&mut self, text: String) {
+        if text.is_empty() {
+            self.error = Some("The clipboard does not contain text.".into());
+            return;
+        }
+        if text.len() as u64 > MAX_FILE_BYTES
+            || text.bytes().filter(|b| *b == b'\n').count() > 250_000
+        {
+            self.error = Some("Clipboard text exceeds the 16 MiB or 250,000-line limit.".into());
+            return;
+        }
+        if self.demo || self.inputs.iter().all(Option::is_some) {
+            self.new_comparison();
+        }
+        let side = self.inputs.iter().position(Option::is_none).unwrap_or(0);
+        self.inputs[side] = Some(Input::Clipboard {
+            name: format!("Clipboard {}", if side == 0 { "A" } else { "B" }),
+            text,
+        });
+        self.error = None;
+        self.request();
+    }
+    fn new_comparison(&mut self) {
+        self.generation += 1;
+        self.loading = false;
+        self.comparison = None;
+        self.inputs = [None, None];
+        self.display.clear();
+        self.hunk_positions.clear();
+        self.current = 0;
+        self.demo = false;
+    }
     fn request(&mut self) {
-        if let [Some(a), Some(b)] = &self.paths {
+        if let [Some(a), Some(b)] = &self.inputs {
             self.generation += 1;
             self.loading = true;
             self.error = None;
             self.worker.submit(Request {
                 generation: self.generation,
-                paths: [a.clone(), b.clone()],
+                inputs: [a.clone(), b.clone()],
                 options: self.options.clone(),
                 demo: self.demo,
             });
         }
     }
     fn example(&mut self) {
-        self.paths = [
-            Some("example/before.rs".into()),
-            Some("example/after.rs".into()),
+        self.inputs = [
+            Some(Input::File("example/before.rs".into())),
+            Some(Input::File("example/after.rs".into())),
         ];
         self.demo = true;
         self.request();
@@ -168,8 +203,20 @@ impl Diffusion {
     }
     fn shortcuts(&mut self, ctx: &egui::Context) {
         let command = egui::Modifiers::COMMAND;
+        let pasted = ctx.input(|i| {
+            i.events.iter().rev().find_map(|event| match event {
+                egui::Event::Paste(text) => Some(text.clone()),
+                _ => None,
+            })
+        });
+        if let Some(text) = pasted {
+            self.accept_clipboard(text);
+        }
         if ctx.input_mut(|i| i.consume_key(command, egui::Key::O)) {
             self.pick(None);
+        }
+        if ctx.input_mut(|i| i.consume_key(command, egui::Key::N)) {
+            self.new_comparison();
         }
         if ctx.input_mut(|i| i.consume_key(command | egui::Modifiers::SHIFT, egui::Key::G)) {
             self.navigate(false);
@@ -204,14 +251,13 @@ impl Diffusion {
                     {
                         self.pick(None);
                     }
-                    if self.comparison.is_some() && ui.button("New").clicked() {
-                        self.generation += 1;
-                        self.loading = false;
-                        self.comparison = None;
-                        self.paths = [None, None];
-                        self.display.clear();
-                        self.hunk_positions.clear();
-                        self.demo = false;
+                    if self.comparison.is_some()
+                        && ui
+                            .button("New")
+                            .on_hover_text(platform::shortcut("N"))
+                            .clicked()
+                    {
+                        self.new_comparison();
                     }
                     if self.loading {
                         ui.spinner();
@@ -269,13 +315,15 @@ impl Diffusion {
                 ui.set_max_width(620.0);
                 ui.columns(2, |cols| {
                     for (i, col) in cols.iter_mut().enumerate() {
-                        let loaded = self.paths[i].as_ref();
+                        let loaded = self.inputs[i].as_ref();
                         let title = loaded
-                            .map(|p| {
-                                p.file_name()
+                            .map(|input| match input {
+                                Input::File(path) => path
+                                    .file_name()
                                     .unwrap_or_default()
                                     .to_string_lossy()
-                                    .into_owned()
+                                    .into_owned(),
+                                Input::Clipboard { name, .. } => name.clone(),
                             })
                             .unwrap_or_else(|| {
                                 if i == 0 {
@@ -291,7 +339,7 @@ impl Diffusion {
                             if loaded.is_some() {
                                 "Click to replace"
                             } else if platform::file_drop_available() {
-                                "Drop here or choose a file"
+                                "Drop, choose, or paste text"
                             } else {
                                 "Choose a file"
                             }
@@ -314,6 +362,14 @@ impl Diffusion {
             if ui.button("Explore an example").clicked() {
                 self.example();
             }
+            ui.label(
+                RichText::new(format!(
+                    "Paste text with {} twice to compare clipboard contents",
+                    platform::shortcut("V")
+                ))
+                .size(11.0)
+                .color(p.muted),
+            );
             ui.add_space(if compact { 12.0 } else { 38.0 });
             ui.label(
                 RichText::new("LOCAL BY DESIGN  ·  YOUR FILES STAY YOURS")
@@ -822,6 +878,7 @@ impl Diffusion {
         self.shortcuts(&ctx);
         while let Ok(action) = self.menu.events.try_recv() {
             match action.as_str() {
+                "new" => self.new_comparison(),
                 "open" => self.pick(None),
                 "close" => ctx.send_viewport_cmd(egui::ViewportCommand::Close),
                 "preferences" => self.settings = true,
@@ -844,7 +901,7 @@ impl Diffusion {
                         .hover_pos()
                         .map(|p| usize::from(p.x > root.max_rect().center().x))
                 })
-            } else if self.paths.iter().any(Option::is_some) {
+            } else if self.inputs.iter().any(Option::is_some) {
                 // A second drop completes the pair, including on an occupied target.
                 None
             } else {
@@ -1121,7 +1178,7 @@ mod tests {
     }
     fn app(ctx: &egui::Context) -> Diffusion {
         Diffusion {
-            paths: [None, None],
+            inputs: [None, None],
             comparison: None,
             worker: Worker::new(ctx.clone()),
             generation: 0,
@@ -1182,7 +1239,7 @@ mod tests {
         let mut app = app(&ctx);
         let files = fixtures();
         frame(&ctx, &mut app, &files[..1], vec![]);
-        assert!(app.paths[0].is_some());
+        assert!(app.inputs[0].is_some());
         assert!(app.comparison.is_none());
         frame(&ctx, &mut app, &files[1..], vec![]);
         wait(&ctx, &mut app);
@@ -1242,8 +1299,8 @@ mod tests {
             &files[..1],
             vec![egui::Event::PointerMoved(target)],
         );
-        assert!(app.paths[1].is_some());
-        assert!(app.paths[0].is_none());
+        assert!(app.inputs[1].is_some());
+        assert!(app.inputs[0].is_none());
         frame(
             &ctx,
             &mut app,
@@ -1252,8 +1309,8 @@ mod tests {
         );
         wait(&ctx, &mut app);
         assert!(app.comparison.is_some());
-        assert_eq!(app.paths[0], Some(files[1].clone()));
-        assert_eq!(app.paths[1], Some(files[0].clone()));
+        assert_eq!(app.inputs[0], Some(Input::File(files[1].clone())));
+        assert_eq!(app.inputs[1], Some(Input::File(files[0].clone())));
     }
     #[test]
     fn paired_drop_and_failed_replacement_preserve_last_result() {
@@ -1271,8 +1328,58 @@ mod tests {
         wait(&ctx, &mut app);
         app.accept_paths(vec![files[0].clone()], None);
         assert!(!app.demo);
-        assert!(app.paths[1].is_none());
+        assert!(app.inputs[1].is_none());
         assert!(app.comparison.is_none());
+    }
+    #[test]
+    fn consecutive_pastes_fill_a_then_b_and_start_a_new_pair() {
+        let ctx = egui::Context::default();
+        let mut app = app(&ctx);
+
+        frame(
+            &ctx,
+            &mut app,
+            &[],
+            vec![egui::Event::Paste("first\nclipboard\n".into())],
+        );
+        assert_eq!(
+            app.inputs[0],
+            Some(Input::Clipboard {
+                name: "Clipboard A".into(),
+                text: "first\nclipboard\n".into(),
+            })
+        );
+        assert!(app.inputs[1].is_none());
+        assert!(app.comparison.is_none());
+
+        frame(
+            &ctx,
+            &mut app,
+            &[],
+            vec![egui::Event::Paste("second\nclipboard\n".into())],
+        );
+        wait(&ctx, &mut app);
+        let comparison = app.comparison.as_ref().unwrap();
+        assert_eq!(comparison.left.text, "first\nclipboard\n");
+        assert_eq!(comparison.right.text, "second\nclipboard\n");
+        assert_eq!(comparison.left.name(), "Clipboard A");
+        assert_eq!(comparison.right.name(), "Clipboard B");
+
+        frame(
+            &ctx,
+            &mut app,
+            &[],
+            vec![egui::Event::Paste("new pair\n".into())],
+        );
+        assert!(app.comparison.is_none());
+        assert_eq!(
+            app.inputs[0],
+            Some(Input::Clipboard {
+                name: "Clipboard A".into(),
+                text: "new pair\n".into(),
+            })
+        );
+        assert!(app.inputs[1].is_none());
     }
     #[test]
     fn worker_discards_stale_comparison() {
