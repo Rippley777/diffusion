@@ -292,6 +292,33 @@ target/release/
 
 > Platform-specific development packages may also be required depending on your operating system and the GUI backend currently in use.
 
+### Transfer to another Mac
+
+On a Mac with Rust installed, create an optimized application bundle and ZIP:
+
+```bash
+bash scripts/package-macos.sh
+```
+
+The archive is written to `target/macos/arm64/` on Apple Silicon or
+`target/macos/x86_64/` on Intel. Transfer the ZIP to a Mac with the same processor
+architecture, unzip it, and drag `Diffusion.app` into Applications. The receiving
+Mac does not need Rust or the source repository. The bundle targets macOS 11 or
+later; compatibility with older systems should be checked on the receiving Mac.
+
+To build for a different processor architecture, install its Rust target first:
+
+```bash
+rustup target add x86_64-apple-darwin
+bash scripts/package-macos.sh x86_64-apple-darwin
+# For Apple Silicon, use aarch64-apple-darwin instead.
+```
+
+These local builds are ad-hoc signed, without Apple notarization. If macOS blocks
+the transferred app, try opening it once, then use **System Settings → Privacy &
+Security → Open Anyway** and confirm. Public distribution would require a
+Developer ID signature and notarization.
+
 ---
 
 ## 🗺 Roadmap
