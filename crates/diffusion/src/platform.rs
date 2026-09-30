@@ -9,6 +9,10 @@ pub fn window_options() -> eframe::NativeOptions {
             .with_min_inner_size([760.0, 500.0])
             .with_app_id("dev.diffusion.Diffusion"),
         renderer: eframe::Renderer::Wgpu,
+        // Rendering captures use isolated storage, never the user's draft/history.
+        #[cfg(feature = "screenshot")]
+        persistence_path: std::env::var_os("DIFFUSION_CAPTURE")
+            .map(|path| PathBuf::from(path).with_extension("state")),
         #[cfg(target_os = "linux")]
         event_loop_builder: Some(Box::new(|builder| {
             if std::env::var_os("DIFFUSION_X11").is_some() {
@@ -65,7 +69,10 @@ impl NativeMenu {
                 true,
                 &[
                     &MenuItem::with_id("new", "New Comparison", true, None),
+                    &MenuItem::with_id("scratchpad", "New Scratchpad…", true, None),
                     &MenuItem::with_id("open", "Compare Files…", true, None),
+                    &MenuItem::with_id("edit", "Edit Comparison Text…", true, None),
+                    &MenuItem::with_id("history", "Clipboard & Scratchpad History…", true, None),
                     &MenuItem::with_id("close", "Close Window", true, None),
                 ],
             )

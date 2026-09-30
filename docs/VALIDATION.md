@@ -32,6 +32,13 @@ Local artifacts (generated, intentionally ignored by version control):
 
 Reproduce the container checks using `scripts/Dockerfile.linux` and `scripts/test-linux.sh`, as described in the README. X11 needs the runtime library `libxkbcommon-x11-0`; the smoke run caught this missing dependency and the documented prerequisites now include it.
 
+## Clipboard and scratchpad history
+
+- `cargo fmt --all --check`, strict all-target/all-feature Clippy, and all 20 workspace tests pass on Apple Silicon macOS.
+- New tests cover focused editor paste (including an empty A pane), scratchpad and pinned-history persistence through eframe storage, exact-content reopening of mixed file/clipboard inputs, pinned edits branching, deleted entries being pinned again, deduplication, recent retention, and the full pinned byte budget. Oversized scratchpads preserve the last successful comparison.
+- Native GPU captures of the dark scratchpad editor and light history window were inspected in `artifacts/scratchpad.png` and `artifacts/history.png`. Capture state is isolated from normal application storage.
+- The release executable was rebuilt. Native OS clipboard transfer, interactive menu/file-picker behavior, and full restart recovery still benefit from hands-on checking; storage round trips and UI event handling are automated. These new controls have not been exercised on a physical Linux desktop.
+
 ## Explicit limitations and remaining manual checks
 
 - **Native Wayland file drop does not work in pinned winit 0.30.13.** Its backend has no drop event implementation; the upstream issue remains open. The app offers file selection there. Use the portal picker, CLI file arguments, or `DIFFUSION_X11=1` under XWayland. Wayland rendering success is not drop-support evidence.

@@ -1,4 +1,5 @@
 use crate::{
+    history::{History, Scratchpad},
     platform,
     theme::Palette,
     worker::{Comparison, Input, Request, Worker},
@@ -50,6 +51,15 @@ pub struct Diffusion {
     focus: bool,
     menu: platform::NativeMenu,
     drop_targets: [Rect; 2],
+    history: History,
+    history_open: bool,
+    history_query: String,
+    history_id: Option<u64>,
+    history_notice: Option<String>,
+    scratchpad: Scratchpad,
+    editor_open: bool,
+    editor_origin: Option<u64>,
+    editor_error: Option<String>,
     #[cfg(feature = "screenshot")]
     capture_frames: u32,
 }
@@ -79,6 +89,21 @@ impl Diffusion {
             focus: false,
             menu: platform::NativeMenu::new(&cc.egui_ctx),
             drop_targets: [Rect::NOTHING; 2],
+            history: cc
+                .storage
+                .and_then(|s| eframe::get_value(s, "comparison_history_v1"))
+                .unwrap_or_default(),
+            history_open: false,
+            history_query: String::new(),
+            history_id: None,
+            history_notice: None,
+            scratchpad: cc
+                .storage
+                .and_then(|s| eframe::get_value(s, "scratchpad_v1"))
+                .unwrap_or_else(Scratchpad::blank),
+            editor_open: false,
+            editor_origin: None,
+            editor_error: None,
             #[cfg(feature = "screenshot")]
             capture_frames: 0,
         };
@@ -107,6 +132,7 @@ impl Diffusion {
             self.hunk_positions.clear();
         }
         self.demo = false;
+        self.history_id = None;
         if paths.len() == 2 {
             self.inputs = [
                 Some(Input::File(paths[0].clone())),
@@ -149,6 +175,9 @@ impl Diffusion {
         self.hunk_positions.clear();
         self.current = 0;
         self.demo = false;
+        self.history_id = None;
+        self.error = None;
+        self.editor_open = false;
     }
     fn request(&mut self) {
         if let [Some(a), Some(b)] = &self.inputs {
@@ -209,14 +238,27 @@ impl Diffusion {
                 _ => None,
             })
         });
-        if let Some(text) = pasted {
+        if let Some(text) = pasted
+            && !self.editor_open
+            && !self.history_open
+            && !ctx.egui_wants_keyboard_input()
+        {
             self.accept_clipboard(text);
         }
         if ctx.input_mut(|i| i.consume_key(command, egui::Key::O)) {
             self.pick(None);
         }
-        if ctx.input_mut(|i| i.consume_key(command, egui::Key::N)) {
+        if ctx.input_mut(|i| i.consume_key(command | egui::Modifiers::SHIFT, egui::Key::N)) {
+            self.scratchpad = Scratchpad::blank();
+            self.open_editor(false);
+        } else if ctx.input_mut(|i| i.consume_key(command, egui::Key::N)) {
             self.new_comparison();
+        }
+        if ctx.input_mut(|i| i.consume_key(command, egui::Key::E)) {
+            self.open_editor(true);
+        }
+        if ctx.input_mut(|i| i.consume_key(command | egui::Modifiers::SHIFT, egui::Key::H)) {
+            self.history_open = !self.history_open;
         }
         if ctx.input_mut(|i| i.consume_key(command | egui::Modifiers::SHIFT, egui::Key::G)) {
             self.navigate(false);
@@ -232,16 +274,18 @@ impl Diffusion {
         if ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Escape)) {
             self.settings = false;
             self.focus = false;
+            self.editor_open = false;
+            self.history_open = false;
         }
     }
     fn toolbar(&mut self, ui: &mut egui::Ui, p: Palette) {
-        egui::Frame::new()
+        let response = egui::Frame::new()
             .fill(p.surface)
             .inner_margin(egui::Margin::symmetric(20, 10))
             .show(ui, |ui| {
-                ui.horizontal(|ui| {
+                ui.horizontal_wrapped(|ui| {
                     let (r, _) = ui.allocate_exact_size(vec2(24.0, 26.0), Sense::hover());
-                    mark(ui.painter(), r.center(), 12.0, p.accent);
+                    mark(ui.painter(), r.center(), 12.0, p.removed, p.added);
                     ui.label(RichText::new("Diffusion").size(17.0).strong());
                     ui.add_space(16.0);
                     if ui
@@ -263,6 +307,20 @@ impl Diffusion {
                         ui.spinner();
                         ui.label(RichText::new("Comparing…").color(p.muted));
                     }
+                    if ui
+                        .button(if self.comparison.is_some() {
+                            "Edit text"
+                        } else {
+                            "Scratchpad"
+                        })
+                        .on_hover_text(format!(
+                            "{} · Edit either side; source files are never changed",
+                            platform::shortcut("E")
+                        ))
+                        .clicked()
+                    {
+                        self.open_editor(self.comparison.is_some());
+                    }
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         if ui
                             .button("Preferences")
@@ -270,6 +328,24 @@ impl Diffusion {
                             .clicked()
                         {
                             self.settings = !self.settings;
+                        }
+                        if ui
+                            .button("History")
+                            .on_hover_text(platform::shortcut("Shift+H"))
+                            .clicked()
+                        {
+                            self.history_open = !self.history_open;
+                        }
+                        if self.comparison.is_some() && !self.demo && !self.loading {
+                            let pinned = self.history_id.is_some_and(|id| {
+                                self.history.entries.iter().any(|e| e.id == id && e.pinned)
+                            });
+                            if ui
+                                .selectable_label(pinned, if pinned { "Pinned" } else { "Pin" })
+                                .clicked()
+                            {
+                                self.pin_current();
+                            }
                         }
                         if self.comparison.is_some()
                             && ui.selectable_label(self.focus, "Focus").clicked()
@@ -279,6 +355,14 @@ impl Diffusion {
                     });
                 });
             });
+        spectrum_line(
+            ui.painter(),
+            response.response.rect.left_bottom(),
+            response.response.rect.right_bottom(),
+            p.removed,
+            p.modified,
+            p.added,
+        );
     }
     fn welcome(&mut self, ui: &mut egui::Ui, p: Palette) {
         let compact = ui.available_height() < 620.0;
@@ -296,7 +380,8 @@ impl Diffusion {
                 ui.painter(),
                 r.center(),
                 if compact { 18.0 } else { 28.0 },
-                p.accent,
+                p.removed,
+                p.added,
             );
             ui.add_space(if compact { 10.0 } else { 22.0 });
             ui.label(
@@ -323,7 +408,9 @@ impl Diffusion {
                                     .unwrap_or_default()
                                     .to_string_lossy()
                                     .into_owned(),
-                                Input::Clipboard { name, .. } => name.clone(),
+                                Input::Clipboard { name, .. } | Input::Scratchpad { name, .. } => {
+                                    name.clone()
+                                }
                             })
                             .unwrap_or_else(|| {
                                 if i == 0 {
@@ -344,11 +431,13 @@ impl Diffusion {
                                 "Choose a file"
                             }
                         );
+                        let side_color = if i == 0 { p.removed } else { p.added };
+                        let side_fill = if i == 0 { p.remove_wash } else { p.add_wash };
                         let response = col.add_sized(
                             [col.available_width(), if compact { 120.0 } else { 145.0 }],
                             egui::Button::new(RichText::new(text).size(15.0))
-                                .fill(p.surface)
-                                .stroke(Stroke::new(1.0, p.border))
+                                .fill(side_fill.gamma_multiply(0.72))
+                                .stroke(Stroke::new(1.2, side_color.gamma_multiply(0.7)))
                                 .corner_radius(8),
                         );
                         self.drop_targets[i] = response.rect;
@@ -396,7 +485,7 @@ impl Diffusion {
                         col.horizontal(|ui| {
                             ui.label(
                                 RichText::new(if side == 0 { "A" } else { "B" })
-                                    .color(p.accent)
+                                    .color(if side == 0 { p.removed } else { p.added })
                                     .strong(),
                             );
                             if ui
@@ -772,7 +861,8 @@ impl Diffusion {
                     match hunk.change_type {
                         ChangeType::Added => p.added,
                         ChangeType::Removed => p.removed,
-                        _ => p.muted,
+                        ChangeType::Modified => p.modified,
+                        ChangeType::Equal => p.muted,
                     }
                 };
                 ribbon(
@@ -798,7 +888,16 @@ impl Diffusion {
                 ui.painter().rect_filled(
                     marker,
                     1,
-                    if h == self.current { p.accent } else { p.muted },
+                    if h == self.current {
+                        p.accent
+                    } else {
+                        match c.diff.hunks[h].change_type {
+                            ChangeType::Added => p.added,
+                            ChangeType::Removed => p.removed,
+                            ChangeType::Modified => p.modified,
+                            ChangeType::Equal => p.muted,
+                        }
+                    },
                 );
             }
             let response = ui.interact(
@@ -850,6 +949,214 @@ impl Diffusion {
     }
 }
 impl Diffusion {
+    fn snapshot(&self) -> Option<Scratchpad> {
+        self.comparison.as_ref().map(|c| Scratchpad {
+            names: [c.left.name(), c.right.name()],
+            texts: [c.left.text.clone(), c.right.text.clone()],
+        })
+    }
+
+    fn remember(&mut self) {
+        if let Some(content) = self.snapshot() {
+            match self.history.record(content, self.history_id) {
+                Ok(id) => {
+                    self.history_id = Some(id);
+                    self.history_notice = None;
+                }
+                Err(message) => {
+                    self.history_id = None;
+                    self.history_notice = Some(message);
+                }
+            }
+        }
+    }
+
+    fn pin_current(&mut self) {
+        if !self
+            .history_id
+            .is_some_and(|id| self.history.entries.iter().any(|e| e.id == id))
+        {
+            self.remember();
+        }
+        if let Some(id) = self.history_id {
+            self.history.toggle_pin(id);
+        }
+    }
+
+    fn open_editor(&mut self, edit: bool) {
+        if edit && let Some(content) = self.snapshot() {
+            self.scratchpad = content;
+            self.editor_origin = self.history_id;
+        } else {
+            self.editor_origin = None;
+        }
+        self.editor_error = None;
+        self.editor_open = true;
+        self.history_open = false;
+        self.focus = false;
+    }
+
+    fn valid_scratchpad(content: &Scratchpad) -> bool {
+        content.texts.iter().all(|text| {
+            text.len() as u64 <= MAX_FILE_BYTES
+                && text.bytes().filter(|b| *b == b'\n').count() <= 250_000
+        })
+    }
+
+    fn compare_scratchpad(&mut self) {
+        if !Self::valid_scratchpad(&self.scratchpad) {
+            self.editor_error = Some("Each side must fit within 16 MiB and 250,000 lines.".into());
+            return;
+        }
+        let content = self.scratchpad.clone();
+        let origin = self.editor_origin;
+        self.load_snapshot(content, origin);
+        self.editor_open = false;
+    }
+
+    fn load_snapshot(&mut self, content: Scratchpad, origin: Option<u64>) {
+        self.new_comparison();
+        self.history_id = origin;
+        self.inputs = std::array::from_fn(|i| {
+            Some(Input::Scratchpad {
+                name: if content.names[i].trim().is_empty() {
+                    format!("Scratchpad {}.txt", if i == 0 { "A" } else { "B" })
+                } else {
+                    content.names[i].clone()
+                },
+                text: content.texts[i].clone(),
+            })
+        });
+        self.history_open = false;
+        self.focus = false;
+        self.request();
+    }
+
+    fn scratchpad_window(&mut self, ctx: &egui::Context, p: Palette) {
+        let mut open = true;
+        let mut compare = false;
+        egui::Window::new("Scratchpad")
+            .id(egui::Id::new("scratchpad_window"))
+            .open(&mut open)
+            .default_size(vec2(920.0, 560.0))
+            .min_width(400.0)
+            .show(ctx, |ui| {
+                ui.label(RichText::new("Edit or paste text on either side. Add a filename extension for syntax highlighting.").color(p.muted));
+                ui.add_space(8.0);
+                let height = (ui.available_height() - 100.0).max(160.0);
+                ui.columns(2, |columns| {
+                    for (i, column) in columns.iter_mut().enumerate() {
+                        let color = if i == 0 { p.removed } else { p.added };
+                        column.horizontal(|ui| {
+                            ui.label(RichText::new(if i == 0 { "A" } else { "B" }).strong().color(color));
+                            ui.add(egui::TextEdit::singleline(&mut self.scratchpad.names[i]).desired_width(ui.available_width()).char_limit(200));
+                        });
+                        egui::Frame::new().fill(if i == 0 { p.remove_wash } else { p.add_wash })
+                            .stroke(Stroke::new(1.0, color.gamma_multiply(0.5)))
+                            .corner_radius(6).inner_margin(8).show(column, |ui| {
+                                egui::ScrollArea::both().id_salt(("scratchpad_scroll", i)).max_height(height).show(ui, |ui| {
+                                    ui.add_sized([ui.available_width(), height], egui::TextEdit::multiline(&mut self.scratchpad.texts[i])
+                                        .id(egui::Id::new(("scratchpad_text", i)))
+                                        .font(egui::TextStyle::Monospace).desired_width(f32::INFINITY).code_editor());
+                                });
+                            });
+                        column.label(RichText::new(format!("{} bytes", self.scratchpad.texts[i].len())).small().color(p.muted));
+                    }
+                });
+                if let Some(message) = &self.editor_error { ui.colored_label(p.removed, message); }
+                ui.horizontal(|ui| {
+                    compare = ui.button(RichText::new("Compare text").strong()).clicked();
+                    ui.label(RichText::new(platform::shortcut("Enter")).small().color(p.muted));
+                    ui.label(RichText::new("Draft saved locally · source files stay unchanged").small().color(p.muted));
+                });
+            });
+        self.editor_open = open;
+        if compare || ctx.input_mut(|i| i.consume_key(egui::Modifiers::COMMAND, egui::Key::Enter)) {
+            self.compare_scratchpad();
+        }
+    }
+
+    fn history_window(&mut self, ctx: &egui::Context, p: Palette) {
+        let mut open = true;
+        let mut action = None;
+        egui::Window::new("Clipboard & scratchpad history")
+            .id(egui::Id::new("history_window"))
+            .open(&mut open).default_size(vec2(640.0, 460.0))
+            .show(ctx, |ui| {
+                ui.label(RichText::new("Saved on this device · 20 recent comparisons · pins are kept · 64 MiB total").small().color(p.muted));
+                if let Some(message) = &self.history_notice { ui.colored_label(p.removed, message); }
+                ui.horizontal(|ui| {
+                    ui.add(egui::TextEdit::singleline(&mut self.history_query).hint_text("Search names or text…").desired_width((ui.available_width() - 115.0).max(120.0)));
+                    if ui.button("Clear recent").on_hover_text("Delete unpinned history; keep all pins").clicked() { action = Some((0, 4)); }
+                });
+                ui.separator();
+                let query = self.history_query.to_lowercase();
+                let mut visible = 0;
+                egui::ScrollArea::vertical().max_height(380.0).show(ui, |ui| {
+                    for pinned in [true, false] {
+                        let mut heading = false;
+                        for entry in &self.history.entries {
+                            if entry.pinned != pinned || (!query.is_empty() && !entry.content.names.iter().chain(entry.content.texts.iter()).any(|s| s.to_lowercase().contains(&query))) { continue; }
+                            if !heading {
+                                ui.label(RichText::new(if pinned { "PINNED" } else { "RECENT · newest first" }).small().strong().color(p.modified));
+                                heading = true;
+                            }
+                            visible += 1;
+                            ui.push_id(entry.id, |ui| {
+                                egui::Frame::new().fill(p.surface).corner_radius(6).inner_margin(10).show(ui, |ui| {
+                                    ui.horizontal(|ui| {
+                                        ui.label(RichText::new(&entry.content.names[0]).strong().color(p.removed));
+                                        ui.label(RichText::new("vs").color(p.muted));
+                                        ui.label(RichText::new(&entry.content.names[1]).strong().color(p.added));
+                                    });
+                                    let preview: String = entry.content.texts[0].lines().find(|l| !l.trim().is_empty()).unwrap_or("(empty A)").chars().take(80).collect();
+                                    ui.label(RichText::new(preview).monospace().small().color(p.muted));
+                                    ui.horizontal(|ui| {
+                                        if ui.button("Open").clicked() { action = Some((entry.id, 0)); }
+                                        if ui.button("Edit").clicked() { action = Some((entry.id, 1)); }
+                                        if ui.button(if pinned { "Unpin" } else { "Pin" }).clicked() { action = Some((entry.id, 2)); }
+                                        if ui.small_button("Delete").clicked() { action = Some((entry.id, 3)); }
+                                        ui.label(RichText::new(format!("{} bytes", entry.content.texts.iter().map(String::len).sum::<usize>())).small().color(p.muted));
+                                    });
+                                });
+                            });
+                            ui.add_space(6.0);
+                        }
+                    }
+                });
+                if visible == 0 {
+                    ui.add_space(20.0);
+                    ui.label(if query.is_empty() { "Paste two texts or compare a scratchpad to save your first comparison." } else { "No comparisons match your search." });
+                }
+            });
+        self.history_open = open;
+        if let Some((id, operation)) = action {
+            match operation {
+                0 | 1 => {
+                    if let Some(content) = self
+                        .history
+                        .entries
+                        .iter()
+                        .find(|e| e.id == id)
+                        .map(|e| e.content.clone())
+                    {
+                        if operation == 0 {
+                            self.load_snapshot(content, Some(id));
+                        } else {
+                            self.scratchpad = content;
+                            self.open_editor(false);
+                            self.editor_origin = Some(id);
+                        }
+                    }
+                }
+                2 => self.history.toggle_pin(id),
+                3 => self.history.remove(id),
+                4 => self.history.clear_recent(),
+                _ => {}
+            }
+        }
+    }
+
     fn render(&mut self, root: &mut egui::Ui) {
         let ctx = root.ctx().clone();
         while let Ok(reply) = self.worker.replies.try_recv() {
@@ -858,6 +1165,17 @@ impl Diffusion {
                 match reply.result {
                     Ok(c) => {
                         self.comparison = Some(c);
+                        if !self.demo
+                            && (self.history_id.is_some()
+                                || self.inputs.iter().any(|input| {
+                                    matches!(
+                                        input,
+                                        Some(Input::Clipboard { .. } | Input::Scratchpad { .. })
+                                    )
+                                }))
+                        {
+                            self.remember();
+                        }
                         self.expanded.clear();
                         self.current = 0;
                         self.horizontal = 0.0;
@@ -875,6 +1193,25 @@ impl Diffusion {
         };
         let p = Palette::get(dark);
         p.apply(&ctx, dark);
+        #[cfg(feature = "screenshot")]
+        if self.capture_frames == 0
+            && self.comparison.is_some()
+            && std::env::var_os("DIFFUSION_CAPTURE").is_some()
+        {
+            match std::env::var("DIFFUSION_CAPTURE_VIEW").as_deref() {
+                Ok("scratchpad") => self.open_editor(true),
+                Ok("history") => {
+                    self.remember();
+                    if let Some(id) = self.history_id
+                        && !self.history.entries.iter().any(|e| e.id == id && e.pinned)
+                    {
+                        self.history.toggle_pin(id);
+                    }
+                    self.history_open = true;
+                }
+                _ => {}
+            }
+        }
         self.shortcuts(&ctx);
         while let Ok(action) = self.menu.events.try_recv() {
             match action.as_str() {
@@ -884,6 +1221,12 @@ impl Diffusion {
                 "preferences" => self.settings = true,
                 "next" => self.navigate(true),
                 "previous" => self.navigate(false),
+                "scratchpad" => {
+                    self.scratchpad = Scratchpad::blank();
+                    self.open_editor(false);
+                }
+                "edit" => self.open_editor(true),
+                "history" => self.history_open = true,
                 _ => {}
             }
         }
@@ -951,6 +1294,12 @@ impl Diffusion {
         if self.settings {
             self.preferences(&ctx);
         }
+        if self.editor_open {
+            self.scratchpad_window(&ctx, p);
+        }
+        if self.history_open {
+            self.history_window(&ctx, p);
+        }
         #[cfg(feature = "screenshot")]
         if let Ok(path) = std::env::var("DIFFUSION_CAPTURE") {
             if !self.loading
@@ -959,7 +1308,7 @@ impl Diffusion {
             {
                 self.capture_frames += 1;
                 if self.capture_frames
-                    == std::env::var("DIFFUSION_CAPTURE_FRAMES")
+                    >= std::env::var("DIFFUSION_CAPTURE_FRAMES")
                         .ok()
                         .and_then(|s| s.parse().ok())
                         .unwrap_or(8)
@@ -1019,6 +1368,13 @@ impl eframe::App for Diffusion {
     }
     fn save(&mut self, storage: &mut dyn eframe::Storage) {
         eframe::set_value(storage, "preferences", &self.prefs);
+        eframe::set_value(storage, "comparison_history_v1", &self.history);
+        if Self::valid_scratchpad(&self.scratchpad) {
+            eframe::set_value(storage, "scratchpad_v1", &self.scratchpad);
+        }
+    }
+    fn auto_save_interval(&self) -> std::time::Duration {
+        std::time::Duration::from_secs(5)
     }
 }
 
@@ -1104,8 +1460,8 @@ fn line_job(
     }
     job
 }
-fn mark(p: &egui::Painter, center: Pos2, radius: f32, color: Color32) {
-    for direction in [-1.0, 1.0] {
+fn mark(p: &egui::Painter, center: Pos2, radius: f32, left_color: Color32, right_color: Color32) {
+    for (direction, color) in [(-1.0, left_color), (1.0, right_color)] {
         let points = [
             center + vec2(-radius * 0.7, -radius),
             center + vec2(radius * direction, -radius * 0.2),
@@ -1119,6 +1475,29 @@ fn mark(p: &egui::Painter, center: Pos2, radius: f32, color: Color32) {
             Stroke::new(2.0, color),
         ));
     }
+}
+
+fn spectrum_line(
+    painter: &egui::Painter,
+    start: Pos2,
+    end: Pos2,
+    left: Color32,
+    middle: Color32,
+    right: Color32,
+) {
+    let center = pos2((start.x + end.x) * 0.5, start.y);
+    let mut mesh = egui::Mesh::default();
+    let colors = [left, middle, right];
+    let points = [start, center, end];
+    for i in 0..3 {
+        mesh.colored_vertex(points[i], colors[i]);
+        mesh.colored_vertex(points[i] + vec2(0.0, 2.0), colors[i].gamma_multiply(0.35));
+    }
+    mesh.add_triangle(0, 1, 2);
+    mesh.add_triangle(1, 3, 2);
+    mesh.add_triangle(2, 3, 4);
+    mesh.add_triangle(3, 5, 4);
+    painter.add(egui::Shape::mesh(mesh));
 }
 fn ribbon(p: &egui::Painter, x: f32, top: f32, height: f32, left: f32, right: f32, color: Color32) {
     let (lt, lb) = if left == 0.0 {
@@ -1197,6 +1576,15 @@ mod tests {
             focus: false,
             menu: platform::NativeMenu::new(ctx),
             drop_targets: [Rect::NOTHING; 2],
+            history: History::default(),
+            history_open: false,
+            history_query: String::new(),
+            history_id: None,
+            history_notice: None,
+            scratchpad: Scratchpad::blank(),
+            editor_open: false,
+            editor_origin: None,
+            editor_error: None,
             #[cfg(feature = "screenshot")]
             capture_frames: 0,
         }
@@ -1390,5 +1778,138 @@ mod tests {
         app.accept_paths(vec![files[0].clone(), files[0].clone()], None);
         wait(&ctx, &mut app);
         assert!(app.comparison.as_ref().unwrap().diff.hunks.is_empty());
+    }
+
+    #[derive(Default)]
+    struct MemoryStorage(std::collections::HashMap<String, String>);
+    impl eframe::Storage for MemoryStorage {
+        fn get_string(&self, key: &str) -> Option<String> {
+            self.0.get(key).cloned()
+        }
+        fn set_string(&mut self, key: &str, value: String) {
+            self.0.insert(key.into(), value);
+        }
+        fn remove_string(&mut self, key: &str) {
+            self.0.remove(key);
+        }
+        fn flush(&mut self) {}
+    }
+
+    #[test]
+    fn mixed_clipboard_history_persists_and_reopens_exact_text() {
+        let ctx = egui::Context::default();
+        let mut app = app(&ctx);
+        app.accept_paths(vec![fixtures()[0].clone()], None);
+        app.accept_clipboard("clipboard version\n".into());
+        wait(&ctx, &mut app);
+        let snapshot = app.snapshot().unwrap();
+        app.pin_current();
+        let mut storage = MemoryStorage::default();
+        eframe::App::save(&mut app, &mut storage);
+        let restored: History = eframe::get_value(&storage, "comparison_history_v1").unwrap();
+        assert_eq!(restored.entries.len(), 1);
+        assert!(restored.entries[0].pinned);
+        assert_eq!(restored.entries[0].content, snapshot);
+        app.new_comparison();
+        // Reopening uses content rather than re-reading file inputs.
+        app.load_snapshot(
+            restored.entries[0].content.clone(),
+            Some(restored.entries[0].id),
+        );
+        wait(&ctx, &mut app);
+        assert_eq!(
+            app.comparison.as_ref().unwrap().left.text,
+            snapshot.texts[0]
+        );
+        assert_eq!(
+            app.comparison.as_ref().unwrap().right.text,
+            snapshot.texts[1]
+        );
+        assert!(
+            app.inputs
+                .iter()
+                .all(|i| matches!(i, Some(Input::Scratchpad { .. })))
+        );
+    }
+
+    #[test]
+    fn paste_in_editor_stays_in_the_focused_pane_and_draft_persists() {
+        let ctx = egui::Context::default();
+        let mut app = app(&ctx);
+        app.open_editor(false);
+        frame(&ctx, &mut app, &[], vec![]);
+        ctx.memory_mut(|memory| memory.request_focus(egui::Id::new(("scratchpad_text", 1_usize))));
+        frame(
+            &ctx,
+            &mut app,
+            &[],
+            vec![egui::Event::Paste("pasted into B\n".into())],
+        );
+        assert_eq!(app.scratchpad.texts[1], "pasted into B\n");
+        assert!(app.scratchpad.texts[0].is_empty());
+        assert!(app.inputs.iter().all(Option::is_none));
+        let mut storage = MemoryStorage::default();
+        eframe::App::save(&mut app, &mut storage);
+        let restored: Scratchpad = eframe::get_value(&storage, "scratchpad_v1").unwrap();
+        assert_eq!(restored, app.scratchpad);
+        app.compare_scratchpad();
+        wait(&ctx, &mut app);
+        assert!(app.comparison.as_ref().unwrap().left.text.is_empty());
+        assert_eq!(app.history.entries.len(), 1);
+    }
+
+    #[test]
+    fn editing_a_pin_creates_new_history_and_keeps_original() {
+        let ctx = egui::Context::default();
+        let mut app = app(&ctx);
+        app.accept_clipboard("old A".into());
+        app.accept_clipboard("old B".into());
+        wait(&ctx, &mut app);
+        app.pin_current();
+        let pinned_id = app.history_id.unwrap();
+        app.open_editor(true);
+        app.scratchpad.names[1] = "changed.json".into();
+        app.scratchpad.texts[1] = "{\"new\":true}".into();
+        app.compare_scratchpad();
+        wait(&ctx, &mut app);
+        assert_eq!(
+            app.comparison.as_ref().unwrap().right.name(),
+            "changed.json"
+        );
+        assert_ne!(app.history_id, Some(pinned_id));
+        assert_eq!(
+            app.history
+                .entries
+                .iter()
+                .find(|e| e.id == pinned_id)
+                .unwrap()
+                .content
+                .texts[1],
+            "old B"
+        );
+        assert_eq!(app.history.entries.len(), 2);
+        app.open_editor(true);
+        app.scratchpad.texts[0] = "too big\n".repeat(250_001);
+        app.compare_scratchpad();
+        assert!(app.editor_error.is_some());
+        assert!(app.editor_open);
+        assert_eq!(app.comparison.as_ref().unwrap().left.text, "old A");
+        // Both history windows can render without taking ownership of the source text.
+        app.history_open = true;
+        app.history_query = "changed.json".into();
+        frame(&ctx, &mut app, &[], vec![]);
+    }
+
+    #[test]
+    fn deleted_current_entry_can_be_pinned_again() {
+        let ctx = egui::Context::default();
+        let mut app = app(&ctx);
+        app.accept_clipboard("A".into());
+        app.accept_clipboard("B".into());
+        wait(&ctx, &mut app);
+        app.history.clear_recent();
+        app.pin_current();
+        assert_eq!(app.history.entries.len(), 1);
+        assert!(app.history.entries[0].pinned);
     }
 }

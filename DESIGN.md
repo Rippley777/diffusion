@@ -4,7 +4,7 @@
 
 ## Visual language
 
-Warm paper in light mode; ink and slate in dark mode. Muted teal denotes additions, terracotta denotes removals, and periwinkle focuses the current change. Symbols `+`, `−`, and a focus edge reinforce color. Chrome uses proportional typography; source uses a crisp monospace at 14 px with a 24 px line rhythm. Borders are thin, surfaces mostly flat, corners restrained.
+Warm paper in light mode; ink and blue-slate in dark mode. Saturated jade denotes additions, coral denotes removals, violet connects modified blocks, and periwinkle focuses the current change. The A and B identities inherit coral and jade, while a thin three-color trace gives the toolbar a quiet signature. Symbols `+`, `−`, and a focus edge reinforce color. Chrome uses proportional typography; source uses a crisp monospace at 14 px with a 24 px line rhythm. Borders are thin, surfaces mostly flat, corners restrained.
 
 The small original mark is two diverging curves. It and the rail express the name through structure, not scientific decoration. No copied assets, colors, icons, or toolbar from another product.
 
@@ -20,4 +20,8 @@ Drop two files to compare. Drop one to fill the left slot, then another to fill 
 
 Command on macOS, Control on Linux: O opens files, G / Shift-G navigate, W closes, comma opens preferences. Escape closes preferences. Keyboard focus is visible. Theme offers System / Light / Dark. Differences remain identifiable without red-green discrimination.
 
-No editing or filesystem writes to compared files. No account, network service, telemetry, or roadmap controls that do nothing.
+Scratchpad / Edit text opens coral A and jade B editors, with filenames for language detection. Compare text submits both buffers to the same background engine; file inputs are copied into editable buffers and never written back. Clipboard paste targets the focused editor while this window is open. Drafts persist across normal application restarts.
+
+History stores text snapshots for completed clipboard/scratchpad comparisons. File comparisons can be saved with Pin. Pinned snapshots appear first and survive recent-history eviction; editing a pin creates a separate version. Recent items appear newest first, with name/text search and Open, Edit, Pin, and Delete actions. Clear recent preserves pins. Keep 20 recent entries within a 64 MiB total content budget; report a full pinned budget without losing the comparison. State is local, with no account or network service.
+
+With Command on macOS or Control on Linux: E edits, Shift-N starts a blank scratchpad, Shift-H opens history, and Enter compares while editing. Escape closes auxiliary windows. No filesystem writes to compared files.

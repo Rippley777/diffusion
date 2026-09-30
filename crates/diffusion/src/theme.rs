@@ -8,6 +8,7 @@ pub struct Palette {
     pub muted: C,
     pub border: C,
     pub accent: C,
+    pub modified: C,
     pub added: C,
     pub removed: C,
     pub add_wash: C,
@@ -20,17 +21,18 @@ impl Palette {
         if dark {
             Self {
                 background: c(0x171c22),
-                surface: c(0x1e242c),
+                surface: c(0x1d2430),
                 text: c(0xdce2e9),
-                muted: c(0x8d99a8),
-                border: c(0x303944),
-                accent: c(0xa6aafa),
-                added: c(0x78c9b0),
-                removed: c(0xe6a18b),
-                add_wash: c(0x1d332f),
-                remove_wash: c(0x352925),
-                add_inline: c(0x305a4d),
-                remove_inline: c(0x654235),
+                muted: c(0x94a3b8),
+                border: c(0x344052),
+                accent: c(0x9b8cff),
+                modified: c(0xb47cff),
+                added: c(0x49d6a5),
+                removed: c(0xff8b72),
+                add_wash: c(0x173b35),
+                remove_wash: c(0x422a2d),
+                add_inline: c(0x216b59),
+                remove_inline: c(0x82483f),
             }
         } else {
             Self {
@@ -38,14 +40,15 @@ impl Palette {
                 surface: c(0xf0efec),
                 text: c(0x28333e),
                 muted: c(0x74808a),
-                border: c(0xdedfdc),
-                accent: c(0x6264b8),
-                added: c(0x277864),
-                removed: c(0xa9513e),
-                add_wash: c(0xe7f2ec),
-                remove_wash: c(0xf7eae3),
-                add_inline: c(0xbce0ce),
-                remove_inline: c(0xefc6b5),
+                border: c(0xd9d9e4),
+                accent: c(0x6558c7),
+                modified: c(0x8457c7),
+                added: c(0x087f67),
+                removed: c(0xb94b42),
+                add_wash: c(0xe0f4ed),
+                remove_wash: c(0xfbe7e2),
+                add_inline: c(0xa8dfcd),
+                remove_inline: c(0xf3bdb3),
             }
         }
     }
@@ -63,6 +66,10 @@ impl Palette {
         visuals.selection.bg_fill = self.accent.gamma_multiply(0.3);
         visuals.selection.stroke = egui::Stroke::new(1.0, self.accent);
         visuals.widgets.noninteractive.bg_stroke = egui::Stroke::new(1.0, self.border);
+        visuals.widgets.hovered.bg_fill = self.accent.gamma_multiply(0.16);
+        visuals.widgets.hovered.bg_stroke = egui::Stroke::new(1.0, self.accent);
+        visuals.widgets.active.bg_fill = self.accent.gamma_multiply(0.24);
+        visuals.widgets.active.bg_stroke = egui::Stroke::new(1.0, self.accent);
         ctx.set_visuals(visuals);
         ctx.global_style_mut(|s| {
             s.spacing.item_spacing = egui::vec2(10.0, 8.0);

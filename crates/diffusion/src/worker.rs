@@ -10,13 +10,14 @@ use std::{
 pub enum Input {
     File(PathBuf),
     Clipboard { name: String, text: String },
+    Scratchpad { name: String, text: String },
 }
 
 impl Input {
     fn load(&self) -> Result<Document, String> {
         match self {
             Self::File(path) => Document::load(path),
-            Self::Clipboard { name, text } => {
+            Self::Clipboard { name, text } | Self::Scratchpad { name, text } => {
                 Ok(Document::from_text(PathBuf::from(name), text.clone()))
             }
         }

@@ -319,7 +319,7 @@ pub fn highlight(document: &Document) -> Syntax {
         result.limited = true;
         return result;
     }
-    let mut dark = HighlightLines::new(syntax, &THEMES.themes["base16-ocean.dark"]);
+    let mut dark = HighlightLines::new(syntax, &THEMES.themes["base16-eighties.dark"]);
     let mut light = HighlightLines::new(syntax, &THEMES.themes["InspiredGitHub"]);
     for i in 0..document.lines.len() {
         let line = document.line(i);

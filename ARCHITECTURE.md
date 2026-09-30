@@ -44,6 +44,8 @@ Upstream sources consulted:
 
 `Document → DiffEngine + DiffOptions → DiffResult { DiffHunk, DiffLine, InlineChange } → visible rows → UI`
 
+`history.rs` owns serializable text snapshots, deduplication, pinned versions, and bounded retention independently of UI rendering. Completed clipboard/scratchpad requests record the successful result, guarded by the worker generation. A scratchpad edit updates its unpinned history entry; pinned entries branch on changes. Reopening loads content into in-memory inputs instead of re-reading paths. History and the current scratchpad draft use versioned eframe storage keys, with five-second autosaves and normal-exit saving. The editor compares on demand, so syntax highlighting still runs in the existing worker rather than on every keystroke.
+
 Rows align both sides in one vertical scroll surface, eliminating synchronization drift. Hunks retain real source ranges; blank cells are alignment space, never fabricated source lines. Inline ranges use UTF-8 byte boundaries. The rail derives geometry from those ranges. Collapsing is a projection, not destructive modification of the result.
 
 ## Diff algorithms

@@ -1,87 +1,421 @@
-# Diffusion
+<div align="center">
 
-**See what changed.** A local, Rust-native two-file comparison app for macOS and Linux.
+# ◈ Diffusion
 
-Diffusion's first slice is deliberately read-only: two documents, quiet line and character highlights, and curved ribbons that connect related changes. No webview, account, telemetry, or network service.
+### See the change. Lose the noise.
 
-## Run
+**A fast, native, actually-beautiful diff tool built in Rust.**
 
-Install Rust through rustup and the platform prerequisites below. The project pins Rust 1.95.0.
+Side-by-side comparison without the visual clutter, browser tabs, or subscription tax.
 
-```sh
-cargo run --release -p diffusion
-cargo run --release -p diffusion -- path/to/original.rs path/to/changed.rs
+[![Rust](https://img.shields.io/badge/Rust-native-000000?style=for-the-badge&logo=rust)](https://www.rust-lang.org/)
+![macOS](https://img.shields.io/badge/macOS-supported-111111?style=for-the-badge&logo=apple)
+![Linux](https://img.shields.io/badge/Linux-supported-111111?style=for-the-badge&logo=linux)
+![Status](https://img.shields.io/badge/status-active_development-7c3aed?style=for-the-badge)
+
+</div>
+
+---
+
+## 📸 Screenshots
+
+Click a screenshot to view it at full size.
+
+<p align="center">
+  <a href="docs/screenshots/comparison.webp">
+    <img
+      src="docs/screenshots/comparison-thumb.webp"
+      alt="Diffusion side-by-side file comparison with highlighted changes"
+      width="640"
+    />
+  </a>
+</p>
+
+<p align="center">
+  <a href="docs/screenshots/scratchpad.webp">
+    <img
+      src="docs/screenshots/scratchpad-thumb.webp"
+      alt="Diffusion scratchpad for editing and comparing text"
+      width="640"
+    />
+  </a>
+</p>
+
+<p align="center">
+  <a href="docs/screenshots/history.webp">
+    <img
+      src="docs/screenshots/history-thumb.webp"
+      alt="Diffusion clipboard and scratchpad history with a pinned comparison"
+      width="640"
+    />
+  </a>
+</p>
+
+---
+
+> **Diffusion exists because looking at a diff shouldn't feel like reading a stack trace through a spreadsheet.**
+
+Most diff tools are either buried inside an IDE, stuck in a terminal, visually hostile, or attached to another monthly subscription.
+
+Diffusion is the alternative: a focused desktop application designed specifically for understanding **what changed**.
+
+Fast startup. Native performance. Clean typography. Clear visual hierarchy. No nonsense.
+
+---
+
+## ✦ What is Diffusion?
+
+Diffusion is a native file comparison application built around one simple idea:
+
+**Differences should be immediately understandable.**
+
+Drop in two files, open a change set, and Diffusion turns raw modifications into a visual workspace designed for humans instead of parsers.
+
+```text
+BEFORE                         AFTER
+
+fn deploy() {                  fn deploy() {
+    build();                       build();
+-   push();                    +   test();
+                               +   push();
+}                              }
 ```
 
-Drop one file, then a second, or drop both together. You can also choose files through the native picker. Press Command-V on macOS or Control-V on Linux once to place clipboard text in A, then again with new clipboard text to place it in B and compare immediately. Pasting while a completed pair is open starts a new pair at A. Files and clipboard text can be mixed. **Explore an example** opens the bundled sample in the actual comparison engine. A single drop onto an existing comparison replaces the side under the pointer.
+Except, you know...
 
-- Previous / Next, or Command-G / Shift-Command-G on macOS; Control-G / Shift-Control-G on Linux.
-- Click an overview marker to jump to its change.
-- Fold unchanged regions; click a seam to expand it.
-- Right-click a line to copy the line or that side of its changed block.
-- Preferences: System / Light / Dark, font size, Patience / Myers / Histogram, and ignore options.
-- Focus hides the main chrome; Escape restores it.
-- Command/Control-O opens files, Command/Control-comma opens preferences, Command/Control-W closes.
-- Command/Control-N clears the current inputs and starts a new comparison.
-- Command/Control-V accepts plain text from the system clipboard; empty and oversized clipboard contents show an error without replacing the current comparison.
+**way prettier than that.**
 
-Compared files are never modified. Appearance preferences are stored by eframe in the local OS application-data directory. Comparison options currently last for the running session.
+---
 
-## Platform prerequisites
+## ⚡ Built for the "what the hell changed?" moment
 
-**macOS:** Apple command-line developer tools (`xcode-select --install`). Apple Silicon is verified locally; Intel uses the same Rust code but has not been tested. Native application menus, AppKit file dialogs, standard window decorations, Metal rendering, and Retina scaling are enabled.
+Diffusion is designed for the situations every developer eventually hits:
 
-**Linux:** a Wayland or X11 session, graphics drivers supporting wgpu, and a desktop portal service with a file-picker backend (for example `xdg-desktop-portal-gtk` or the KDE equivalent). Debian/Ubuntu build libraries:
+- Comparing two versions of the same file
+- Reviewing generated code before accepting it
+- Inspecting AI-assisted changes
+- Checking configuration differences
+- Comparing files outside of Git
+- Understanding a refactor without opening an entire IDE
+- Figuring out exactly what changed between two mysterious copies named `final`, `final2`, and `final_ACTUAL`
 
-```sh
-sudo apt-get install build-essential pkg-config libwayland-dev libxkbcommon-dev \
-  libxkbcommon-x11-0 libx11-dev libx11-xcb-dev libxcursor-dev libxi-dev libxrandr-dev libegl1-mesa-dev
+You shouldn't need a full development environment just to answer:
+
+> **"What's different between these two things?"**
+
+---
+
+## ✨ Core Experience
+
+### Split Diff View
+
+A clean side-by-side comparison keeps both versions visible while additions, deletions, and modifications remain visually connected.
+
+No wall of red and green.
+
+No fighting your editor.
+
+Just the change.
+
+### Intelligent Change Highlighting
+
+Diffusion emphasizes the smallest meaningful change instead of treating an entire modified line as equally important.
+
+```diff
+- connection_timeout = 5000
++ connection_timeout = 15000
 ```
 
-**Wayland file-drop limitation:** winit 0.30 does not deliver native Wayland drop events. Use the portal picker or CLI there. For file-manager drag/drop on a Wayland desktop with XWayland installed, launch `DIFFUSION_X11=1 cargo run --release -p diffusion`. The welcome screen offers file selection rather than a nonfunctional drop invitation on native Wayland. See the [upstream issue](https://github.com/emilk/egui/issues/1563).
+Your eyes should land on **`5000 → 15000`**, not hunt for it.
 
-Both display backends are compiled in. Linux uses host window decorations and shared in-window actions. No macOS titlebar imitation. A compositor's appearance reporting may vary; explicit Light and Dark always work.
+### Synchronized Navigation
 
-## Scope and limits
+Both sides move together so related code stays aligned as you move through a file.
 
-This is a working first vertical slice, not the complete roadmap or a production release.
+Changes become landmarks instead of interruptions.
 
-- UTF-8 text only; binary and UTF-16 input are rejected. Maximum 16 MiB and 250,000 newline characters per file.
-- Source rows are virtualized. Syntax highlighting falls back to plain text above 2 MiB or when any line exceeds 8,192 bytes. At most 4,096 characters of each line are displayed; a visible suffix identifies truncation. Copy retains the full line/block.
-- Character highlighting is bounded to paired lines of at most 4,096 bytes, with a total inline time budget. Huge replacements retain line highlighting. Line diff has a two-second deadline that can yield coarser hunks.
-- Changed lines pair by position, not semantic similarity. No moved-block detection. Tabs display as four spaces. A `¬` suffix marks a missing terminal newline.
-- AccessKit is enabled and visible source rows expose labels, but full-document screen-reader navigation and arbitrary text-range selection are not finished. Copy line/block is available.
-- No editing, merge, folder comparison, Git, file watching, search, unified view, or review sessions yet. No placeholder buttons for these features.
-- Native file pickers are modal; analysis runs in a bounded background worker. New requests replace queued work and stale results cannot overwrite the current comparison. An in-progress algorithm runs until its time limit; cancellation is cooperative between stages.
+### Change Navigation
 
-See [ARCHITECTURE.md](ARCHITECTURE.md), [DESIGN.md](DESIGN.md), and [validation evidence](docs/VALIDATION.md).
+Jump directly between modifications rather than scrolling around trying to find the next highlighted line.
 
-## Development
+```text
+        ↑ Previous Change
 
-```sh
-cargo fmt --all --check
-cargo clippy --workspace --all-targets --all-features -- -D warnings
-cargo test --workspace --all-features
+             4 / 17
+
+         Next Change ↓
 ```
 
-Core tests cover reconstruction, newline differences, Unicode inline boundaries, normalization, collapse, and 20,000-line input. UI event tests cover the sequential/paired-drop workflow, navigation, themes, close, error preservation, and stale requests.
+### Syntax-Aware Presentation
 
-Optional native rendering captures (no desktop screen-recording permission required):
+Source code should still look like source code.
 
-```sh
-mkdir -p artifacts
-cargo build -p diffusion --features screenshot
-DIFFUSION_CAPTURE=artifacts/comparison.png DIFFUSION_CAPTURE_THEME=dark \
-  target/debug/diffusion fixtures/before.rs fixtures/after.rs
+Diffusion is designed to preserve readable syntax presentation while layering diff information on top instead of burying everything under diff colors.
+
+### Native Desktop Experience
+
+Diffusion isn't a web page wearing a desktop-app trench coat.
+
+The goal is a lightweight native application with fast startup, smooth interaction, and minimal overhead.
+
+---
+
+## 🧠 Designed for Modern Development
+
+The way we write software has changed.
+
+AI coding tools can generate enormous changes in seconds.
+
+That makes **understanding those changes** more important than ever.
+
+Diffusion is being built with workflows like these in mind:
+
+```text
+AI generates change
+        │
+        ▼
+    DIFFUSION
+        │
+        ├── What changed?
+        ├── Where did it change?
+        ├── Was anything unexpectedly removed?
+        ├── Did configuration change?
+        └── Do I actually want this?
+        │
+        ▼
+   Ship with confidence
 ```
 
-The optional screenshot feature captures the app's own GPU surface and exits. Without that feature, capture environment variables do nothing.
+Generating code is getting easier.
 
-Linux container validation:
+**Reviewing it shouldn't get harder.**
 
-```sh
-docker build -t diffusion-linux-test -f scripts/Dockerfile.linux .
-docker run --rm -v "$PWD:/work" -v diffusion-linux-target:/build \
-  -v diffusion-linux-cargo:/usr/local/cargo/registry diffusion-linux-test \
-  sh scripts/test-linux.sh
+---
+
+## ◈ The Philosophy
+
+Diffusion follows a few rules.
+
+### 01 — The content comes first
+
+The interface should disappear while you're reading.
+
+### 02 — Color has meaning
+
+Highlight differences, not the entire application.
+
+### 03 — Density without clutter
+
+Developer tools need information density.
+
+They don't need visual chaos.
+
+### 04 — Fast enough to become muscle memory
+
+Opening Diffusion should feel closer to opening a terminal than launching an IDE.
+
+### 05 — A developer utility can still be beautiful
+
+Functional and gorgeous are not mutually exclusive.
+
+We have the technology.
+
+---
+
+## 🦀 Why Rust?
+
+Because a diff viewer has no business consuming half your laptop.
+
+Rust gives Diffusion a foundation built around:
+
+- Native performance
+- Low memory overhead
+- Fast filesystem operations
+- Safe concurrency
+- Cross-platform potential
+- Small, distributable binaries
+
+It also gives me an excuse to write more Rust.
+
+Which is arguably the real reason.
+
+---
+
+## 🖥 Platform Support
+
+| Platform |       Status        |
+| -------- | :-----------------: |
+| macOS    |         ✅          |
+| Linux    | ✅ / In Development |
+| Windows  |      🔮 Future      |
+
+The goal is to keep platform-specific assumptions isolated so Diffusion can remain genuinely portable.
+
+---
+
+## 🚀 Getting Started
+
+### Requirements
+
+You'll need a recent stable Rust toolchain.
+
+If Rust isn't installed:
+
+```bash
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 ```
+
+Then clone Diffusion:
+
+```bash
+git clone https://github.com/Rippley777/diffusion.git
+cd diffusion
+```
+
+Run it:
+
+```bash
+cargo run
+```
+
+Or build an optimized release:
+
+```bash
+cargo build --release
+```
+
+The compiled binary will be available under:
+
+```text
+target/release/
+```
+
+> Platform-specific development packages may also be required depending on your operating system and the GUI backend currently in use.
+
+---
+
+## 🗺 Roadmap
+
+Diffusion is under active development.
+
+Some of the ideas being explored:
+
+- [ ] Beautiful side-by-side text diffs
+- [ ] Inline diff mode
+- [ ] Drag-and-drop file comparison
+- [ ] Folder / directory comparison
+- [ ] Recent comparison history
+- [ ] Git repository awareness
+- [ ] Compare working tree against `HEAD`
+- [ ] Commit-to-commit comparison
+- [ ] Branch comparison
+- [ ] Image comparison
+- [ ] JSON-aware structural diffs
+- [ ] YAML / configuration-aware diffs
+- [ ] Ignore whitespace / formatting-only changes
+- [ ] Character-level change highlighting
+- [ ] Search within comparisons
+- [ ] Keyboard-first navigation
+- [ ] Dark and light themes
+- [ ] Open from terminal
+- [ ] Shell / Finder integration
+- [ ] External Git difftool integration
+- [ ] Merge conflict assistance
+- [ ] Three-way merge view
+- [ ] AI-assisted change summaries
+
+And probably several features caused by me getting annoyed at another diff tool.
+
+---
+
+## 🔬 Where the name comes from
+
+**Diffusion** is the movement of something from an area of higher concentration toward an area of lower concentration until the distinction begins to resolve.
+
+This app does roughly the opposite.
+
+It takes two things that look almost identical...
+
+and makes every difference impossible to miss.
+
+---
+
+## 🛠 Development
+
+Clone the repository:
+
+```bash
+git clone https://github.com/Rippley777/diffusion.git
+cd diffusion
+```
+
+Check the project:
+
+```bash
+cargo check
+```
+
+Run the test suite:
+
+```bash
+cargo test
+```
+
+Run the application:
+
+```bash
+cargo run
+```
+
+Build optimized:
+
+```bash
+cargo build --release
+```
+
+---
+
+## 🤝 Contributing
+
+Diffusion is primarily being built as a tool I actually want to use.
+
+That said, good ideas are good ideas.
+
+Issues, bug reports, platform fixes, performance improvements, and thoughtful pull requests are welcome.
+
+If you're proposing a feature, the bar is simple:
+
+> **Does this make understanding a change easier?**
+
+If yes, it probably belongs here.
+
+---
+
+## ⚠️ Project Status
+
+Diffusion is currently under active development.
+
+APIs, interfaces, workflows, and architectural decisions may change while the core experience is being refined.
+
+In other words:
+
+```text
+if (something_breaks) {
+    congratulations();
+    you_found_the_edge();
+}
+```
+
+---
+
+<div align="center">
+
+## Stop squinting at diffs.
+
+### Let them diffuse.
+
+**[View the Repository](https://github.com/Rippley777/diffusion)**
+
+Built with 🦀, unreasonable UI standards, and a refusal to subscribe to another developer tool.
+
+</div>
