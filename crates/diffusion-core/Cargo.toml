@@ -3,7 +3,7 @@ name = "diffusion-core"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
-license.workspace = true
+license-file.workspace = true
 
 [dependencies]
 similar = "3.2"
