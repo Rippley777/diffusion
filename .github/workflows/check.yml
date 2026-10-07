@@ -3,11 +3,13 @@ on: [push, pull_request]
 jobs:
   check:
     strategy:
+      fail-fast: false
       matrix:
-        os: [macos-latest, ubuntu-latest]
+        # Keep the current Linux baseline and validate the next runner explicitly.
+        os: [macos-latest, ubuntu-24.04, ubuntu-26.04]
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - if: runner.os == 'Linux'
         run: |
           sudo apt-get update
